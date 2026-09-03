@@ -5,6 +5,14 @@
   "version": "0.9.2",
   "publisher": "mukilteo-it",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/mukilteowa-gov/vscode-calccode.git"
+  },
+  "bugs": {
+    "url": "https://github.com/mukilteowa-gov/vscode-calccode/issues"
+  },
+  "homepage": "https://github.com/mukilteowa-gov/vscode-calccode#readme",
   "engines": {
     "vscode": "^1.75.0"
   },
