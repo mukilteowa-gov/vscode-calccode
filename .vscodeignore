@@ -1,0 +1,14 @@
+.vscode/**
+src/**
+examples/**
+node_modules/**
+tsconfig.json
+test/**
+**/*.map
+**/*.ts
+.gitignore
+.vscodeignore
+bun.lock
+package-lock.json
+*.vsix
+DEVELOPING.md

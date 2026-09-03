@@ -1,0 +1,43 @@
+<< DEMO: each block below trips one checker rule   >>
+<< Open this file with the FE Calc extension       >>
+
+<< 1. line over 58 chars (FE hard wrap point)      >>
+NVAR0 := PYPX.SAL + PBSX.PTD + HBSX.PTD + HRSX.AMT + 12345678
+
+<< 2. corrupted token from a bad paste             >>
+NVAR6 := PYPX.BEG1DO
+
+<< 3. attribute that does not exist on the cluster >>
+<<    (FE skips the whole calc silently)           >>
+NVAR1 := PBSX.YTD
+
+<< 4. cluster typo, with a suggestion              >>
+NVAR2 := PBXS.PTD
+
+<< 5. LOAD by the wrong key, no MSCX.STATUS check   >>
+LOAD(HBSX.NO, 2)
+NVAR3 := HBSX.PTD
+
+<< 6. array attribute without its {n} index        >>
+NVAR4 := NUCD.ASVAL
+
+<< 7. = used to assign, == and THEN from elsewhere >>
+NVAR5 = 1
+IF NVAR5 == 1 THEN
+ENDIF
+
+<< 8. cluster that is not in the library           >>
+CVAR1 := JOBT.WC
+
+<< 9. numeric register given a string              >>
+NVAR7 := "ABC"
+
+<< 10. GOTO to a label that is not defined         >>
+GOTO NOWHERE
+
+<< 11. unbalanced IF (no matching ENDIF)           >>
+IF NVAR0 > 0
+  NVAR1 := NVAR0
+
+<< 12. register used but never assigned (warning)  >>
+HRSX.AMT := NVAR8

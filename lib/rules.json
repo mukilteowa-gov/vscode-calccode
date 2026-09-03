@@ -1,0 +1,14 @@
+{
+  "_comment": "Rules for Finance Enterprise calc-code source (.calc): editor width, comment markers, known paste-corruption tokens.",
+  "maxLineWidth": 58,
+  "comment": {
+    "open": "<<",
+    "close": ">>"
+  },
+  "corruptionPatterns": [
+    "HOURSX",
+    "HOURSD",
+    "ENDIFIF",
+    "PYPX.BEG1DO"
+  ]
+}

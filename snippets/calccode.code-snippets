@@ -1,0 +1,125 @@
+{
+  "FE calc code template": {
+    "prefix": "calc-template",
+    "description": "Scaffold a new FE CDH calc code (header box + change log, <=58 wide)",
+    "body": [
+      "<<=============    ${1:CALC TITLE}    ==================",
+      "*--------------------------------------------------------*",
+      "*  CALCID: ${2:CALCID}   (CDH ${3:NNNN})                 *",
+      "*  ${4:one-line purpose}                                 *",
+      "*                                                        *",
+      "*                  C H A N G E    L O G                  *",
+      "*                                                        *",
+      "*  Date      Ver     By   Description                    *",
+      "* ========  ======  ====  ====================           *",
+      "*  ${5:MM/DD/YY}  <1.00>  ${6:INI}  ${7:what}            *",
+      "*=======================================================>>",
+      "<< Debug: description 10 = DEBUG turns on WARN output >>",
+      "CVAR9 := ${8|HRSD,CNTD,DEDD|}.VALDS{10}",
+      "$0"
+    ]
+  },
+  "FE calc change-log row": {
+    "prefix": "calc-changelog",
+    "description": "A CHANGE LOG row: Date / Ver / By / Description",
+    "body": ["*  ${1:MM/DD/YY}  <${2:1.10}>  ${3:INI}  ${4:description}    *"]
+  },
+  "LOAD with status check": {
+    "prefix": "calc-load",
+    "description": "LOAD a base / code / CDH and check MSCX.STATUS (the iron rule)",
+    "body": [
+      "LOAD(${1|PBSX.CLS,HBSX.CLS,NUCD.CC,CNTX.NO,DEDX.NO,HRSX.NO|}, ${2:1})",
+      "IF MSCX.STATUS <> \"FAILED\"",
+      "  ${3:NVAR1} := ${4:PBSX.PTD}",
+      "ELSE",
+      "  WARN(\"LOAD FAILED ${5:PBSX} ${2}\")",
+      "ENDIF",
+      "$0"
+    ]
+  },
+  "Loop over pay assignments": {
+    "prefix": "calc-loop-pypx",
+    "description": "DO/UNTIL over every pay assignment via LOAD(PYPX.CLS, n)",
+    "body": [
+      "${1:NVAR5} := 0  << pay-assignment loop index >>",
+      "DO",
+      "  ${1} := ${1} + 1",
+      "  LOAD(PYPX.CLS, ${1})",
+      "  IF MSCX.STATUS <> \"FAILED\"",
+      "    IF PYPX.FROM = \"P\"",
+      "      ${2:NVAR0} := ${2} + PYPX.SAL",
+      "    ENDIF",
+      "  ENDIF",
+      "UNTIL MSCX.STATUS = \"FAILED\"",
+      "$0"
+    ]
+  },
+  "Loop over association codes": {
+    "prefix": "calc-loop-eadt",
+    "description": "DO/UNTIL over the employee's association-code rows via LOAD(EADT.ID, EMPM.ID)",
+    "body": [
+      "DO",
+      "  LOAD(EADT.ID, EMPM.ID)",
+      "  IF MSCX.STATUS <> \"FAILED\"",
+      "    IF EADT.CD = \"${1:CODE}\"",
+      "      ${2:CVAR1} := EADT.DESC",
+      "    ENDIF",
+      "  ENDIF",
+      "UNTIL MSCX.STATUS = \"FAILED\"",
+      "$0"
+    ]
+  },
+  "Common code lookup": {
+    "prefix": "calc-nucd",
+    "description": "LOAD a common code (category + value) and read its associated values",
+    "body": [
+      "${1:CVAR3} := \"${2:CCCC}${3:VALUE}\"",
+      "LOAD(NUCD.CC, ${1})",
+      "IF MSCX.STATUS = \"FAILED\"",
+      "  WARN(\"LOADFAIL COMMON CD\", ${1})",
+      "  STOP",
+      "ENDIF",
+      "${4:NVAR3} := NUCD.ASVAL{${5:1}}",
+      "$0"
+    ]
+  },
+  "Debug WARN block": {
+    "prefix": "calc-debug",
+    "description": "IF CVAR9 = \"DEBUG\" block of WARN lines (VALDS{10} convention)",
+    "body": [
+      "IF CVAR9 = \"DEBUG\"",
+      "  WARN(\"${1:LABEL}         =\", ${2:NVAR1})",
+      "  WARN(\"${3:FINAL AMT}     =\", ${4:NVAR9})",
+      "ENDIF",
+      "$0"
+    ]
+  },
+  "IF / ELSE / ENDIF": {
+    "prefix": "calc-if",
+    "description": "IF block with ELSE",
+    "body": ["IF ${1:condition}", "  $2", "ELSE", "  $3", "ENDIF", "$0"]
+  },
+  "Round and assign the answer": {
+    "prefix": "calc-answer",
+    "description": "ROUND2 the result register and write it to the transaction amount",
+    "body": ["ROUND2(${1:NVAR9})", "${2|CNTX,DEDX,HRSX|}.AMT := ${1}", "$0"]
+  },
+  "Initialize registers": {
+    "prefix": "calc-init",
+    "description": "Zero NVAR0..NVAR9 with a comment slot each",
+    "body": [
+      "<< INITIALIZE >>",
+      "NVAR0 := 0  << ${1} >>",
+      "NVAR1 := 0  << ${2} >>",
+      "NVAR2 := 0",
+      "NVAR3 := 0",
+      "NVAR4 := 0",
+      "NVAR5 := 0",
+      "NVAR6 := 0",
+      "NVAR7 := 0",
+      "NVAR8 := 0  << ${3} >>",
+      "NVAR9 := 0  << ${4:FINAL} >>",
+      "$0"
+    ]
+  }
+}
