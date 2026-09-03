@@ -1,8 +1,8 @@
 {
   "name": "calccode",
   "displayName": "Calc Code (CentralSquare payroll)",
-  "description": "Editor for CentralSquare (Finance Enterprise / IFAS) payroll calc code: syntax coloring, cluster and attribute library with hover and completion, syntax checking, formatter, snippets and a bundled cluster reference.",
-  "version": "0.9.2",
+  "description": "Editor for CentralSquare Finance Enterprise payroll calc code: syntax coloring, cluster and attribute library with hover and completion, syntax checking, formatter, snippets and a bundled cluster reference.",
+  "version": "0.9.3",
   "publisher": "CityofMukilteo",
   "license": "MIT",
   "repository": {
@@ -24,7 +24,6 @@
   "keywords": [
     "CentralSquare",
     "Finance Enterprise",
-    "IFAS",
     "payroll",
     "calc code"
   ],
