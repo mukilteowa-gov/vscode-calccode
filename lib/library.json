@@ -1,6 +1,6 @@
 {
  "_comment": "Generated from the Finance Enterprise PYUPCL cluster catalog and the Cluster_attribute_PY Reference workbook: clusters, attributes, types, array sizes, help text, screen masks, documented LOAD forms and common attribute values. Names, short labels, types and sizes only, no vendor documentation text. Do not edit by hand; add site-specific clusters through the calccode.library.extraClusters setting.",
- "generated": "2026-09-03",
+ "generated": "2026-09-16",
  "sources": {
   "catalog": {
    "source": "Finance Enterprise PYUPCL cluster catalog",

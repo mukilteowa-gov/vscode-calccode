@@ -1,6 +1,6 @@
 # Calc Code cluster and attribute reference
 
-Generated 2026-09-03 from the Finance Enterprise PYUPCL cluster catalog (75 clusters, 1377 attributes) and the Cluster_attribute_PY Reference workbook. Names, short labels, types and array sizes only: which clusters exist and what their attributes are called. Which ones your site's calcs can reach at run time depends on the install. Finance Enterprise and IFAS are trademarks of CentralSquare Technologies; this reference is not affiliated with or endorsed by them.
+Generated 2026-09-16 from the Finance Enterprise PYUPCL cluster catalog (75 clusters, 1377 attributes) and the Cluster_attribute_PY Reference workbook. Names, short labels, types and array sizes only: which clusters exist and what their attributes are called. Which ones your site's calcs can reach at run time depends on the install. Finance Enterprise and IFAS are trademarks of CentralSquare Technologies; this reference is not affiliated with or endorsed by them.
 
 ## Rules that apply everywhere
 

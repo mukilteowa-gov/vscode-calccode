@@ -467,6 +467,20 @@ export function lint(text: string, opts: LintOptions): Issue[] {
     }
   }
 
+  // ---- ROUND2 on a rate ------------------------------------------------------------------
+  // The engine carries rates at five decimals and rounds only the money it derives from them.
+  // Rounding a register that ends up in *.RATE shifts the amount (10 h x 55.69892 = 556.99, but
+  // 10 h x 55.70 = 557.00). Flag ROUND2(X) when X is assigned to a .RATE attribute anywhere.
+  {
+    const rateRegs = new Set<string>();
+    for (const ln of code) { const m = /\b\w+\.RATE\s*:=\s*([A-Z]VAR\d+)\b/i.exec(ln); if (m) rateRegs.add(m[1].toUpperCase()); }
+    if (rateRegs.size) code.forEach((ln, i) => {
+      const re = /\bROUND\d*\s*\(\s*([A-Z]VAR\d+)\s*\)/gi; let m: RegExpExecArray | null;
+      while ((m = re.exec(ln))) if (rateRegs.has(m[1].toUpperCase()))
+        push(i + 1, m.index + 1, 'warning', 'rate-round', `${m[1].toUpperCase()} is rounded but assigned to .RATE: rates keep 5 decimals, round only amounts`, m.index + m[0].length + 1);
+    });
+  }
+
   issues.sort((a, b) => a.line - b.line || a.col - b.col);
   return issues;
 }
