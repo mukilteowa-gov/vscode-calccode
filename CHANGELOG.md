@@ -8,6 +8,14 @@
   sequence and source columns. Writes one `.calc` file per CDH, restores indentation
   when the export dropped it, reports duplicate sequence rows, then checks every
   imported file.
+- Import file layouts: plain `1196.calc`, labeled `1196.prod.calc` to import next to
+  your own work, a folder per kind of CDH, or your own pattern
+  (`calccode.import.filePattern`, `calccode.import.typeFolders`).
+- Importing again leaves matching files alone and reports what changed. In a git
+  repository the overwrite warning tells committed files from uncommitted work and can
+  overwrite the committed ones only.
+- `calccode.lint.rules`: turn any of the 22 checks off or change its severity by rule
+  code. The README lists the codes, and the scopes for changing colors.
 - Check all calc files: checks every `.calc` file in the open folder without opening
   them, fills the Problems panel and writes a summary report.
 

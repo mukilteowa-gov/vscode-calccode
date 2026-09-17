@@ -72,7 +72,35 @@ export interface LintOptions {
   unknownNameSeverity?: Severity;
   /** LOAD without a following MSCX.STATUS check (default 'hint') */
   loadUncheckedSeverity?: Severity | 'off';
+  /** per rule code (the [code] of an issue): a severity for every finding of that rule, or 'off' */
+  ruleSeverity?: Record<string, Severity | 'off' | 'default' | undefined>;
 }
+
+/** Every rule code the checker reports, with what it covers. */
+export const RULE_CODES: Record<string, string> = {
+  'width': "line over 58 characters (the editor wraps the 59th and merges tokens)",
+  'tab': "tab character",
+  'corrupt': "paste corruption such as PYPX.BEG1DO, HOURSX, ENDIFIF",
+  'comment': "comment never closed, or a stray >>",
+  'block': "IF/ELSE/ENDIF and DO/UNTIL structure",
+  'syntax': "statements that are not calc code",
+  'operator': "words and operators from other languages: ==, !=, THEN, ELSEIF, ENDDO",
+  'assign-eq': "= used where := is meant",
+  'lhs': "assignment to something that cannot be assigned",
+  'paren': "unmatched parentheses",
+  'quote': "string not closed on its line",
+  'cluster-unknown': "cluster name not in the library",
+  'attr-unknown': "attribute name not in the library",
+  'array-index': "{n} missing, out of range, or used on a scalar",
+  'load-form': "LOAD with a key other than the documented one",
+  'load-unchecked': "LOAD not followed by an MSCX.STATUS check",
+  'goto': "GOTO to a missing label, labels never used",
+  'type': "NVAR and CVAR type mix-ups",
+  'round-arg': "ROUND on something that is not an NVAR",
+  'rate-round': "a rounded register assigned to .RATE",
+  'uninit': "register read but never assigned",
+  'unknown-word': "unknown function, or a bare word",
+};
 
 const LOGICAL = new Set(['AND', 'OR', 'NOT']);
 const FOREIGN: Record<string, string> = {
@@ -482,7 +510,13 @@ export function lint(text: string, opts: LintOptions): Issue[] {
   }
 
   issues.sort((a, b) => a.line - b.line || a.col - b.col);
-  return issues;
+  const over = opts.ruleSeverity;
+  if (!over) return issues;
+  return issues.flatMap((i) => {
+    const sev = over[i.code];
+    if (sev === 'off') return [];
+    return sev && sev !== 'default' ? [{ ...i, severity: sev }] : [i];
+  });
 }
 
 /** True when any issue is an error (used for exit codes). */

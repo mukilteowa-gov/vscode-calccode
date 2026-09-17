@@ -4,7 +4,7 @@
 import { strict as assert } from 'assert';
 import { readFileSync } from 'fs';
 import { join } from 'path';
-import { lint, type Issue } from '../lib/lint-core';
+import { lint, RULE_CODES, type Issue } from '../lib/lint-core';
 
 const LIB = join(__dirname, '..', 'lib');
 const library = JSON.parse(readFileSync(join(LIB, 'library.json'), 'utf8'));
@@ -186,6 +186,17 @@ t('bare word is a warning; a bare cluster name is an error', () => {
   const issues = run(['NVAR1 := NVAR2 + BOGUS', 'NVAR2 := 1', 'NVAR3 := PBSX']);
   assert.ok(has(issues, 'unknown-word', 1, 'warning'));
   assert.ok(has(issues, 'syntax', 3, 'error'));
+});
+
+t('rule overrides: off drops a rule, a severity replaces it, the rule list is complete', () => {
+  const src = ['\tNVAR0 := 1', 'LOAD(HBSX.CLS,2)', 'CNTX.AMT := NVAR0'].join('\n');
+  const base = lint(src, { library, rules });
+  assert.ok(has(base, 'tab', 1, 'warning') && has(base, 'load-unchecked', 2, 'hint'));
+  const over = lint(src, { library, rules, ruleSeverity: { tab: 'off', 'load-unchecked': 'error', width: 'default' } });
+  assert.ok(!has(over, 'tab') && has(over, 'load-unchecked', 2, 'error'));
+  const source = readFileSync(join(LIB, 'lint-core.ts'), 'utf8');
+  const used = new Set([...source.matchAll(/push\([^;\n]*?(?:'(?:error|warning|info|hint)'|\w*Sev\w*), '([a-z][a-z0-9-]*)'/g)].map((m) => m[1]));
+  assert.deepEqual([...used].sort(), Object.keys(RULE_CODES).sort());
 });
 
 console.log(`\nall ${n} lint tests passed`);

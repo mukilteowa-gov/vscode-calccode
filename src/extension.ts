@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import { join } from 'path';
 import { reindent } from './format';
 import { lint, type Issue, type Severity } from '../lib/lint-core';
-import { assembleCalcs, calcFileName, decodeExport, parseExport } from '../lib/import-core';
+import { assembleCalcs, calcPath, decodeExport, parseExport, patternNeedsLabel, DEFAULT_FILE_PATTERN, DEFAULT_TYPE_FOLDERS } from '../lib/import-core';
 import { isPdf, parsePdfExport } from '../lib/import-pdf';
 // Bundled at build time (esbuild) so the .vsix is self-contained.
 import libraryJson from '../lib/library.json';
@@ -128,7 +128,7 @@ export function activate(context: vscode.ExtensionContext) {
       if (doc && doc.languageId === LANG) void lintDocument(doc, diagnostics);
     }),
     vscode.commands.registerCommand('calccode.lintWorkspace', () => lintWorkspace(diagnostics)),
-    vscode.commands.registerCommand('calccode.importExport', () => importExport(diagnostics)),
+    vscode.commands.registerCommand('calccode.importExport', () => importExport(diagnostics, context)),
   );
   const diagnostics = registerDiagnostics(context);
 }
@@ -455,6 +455,7 @@ function lintText(text: string): Issue[] {
     rules: RULES,
     unknownNameSeverity: config.get<Severity>('lint.unknownNameSeverity', 'warning'),
     loadUncheckedSeverity: config.get<Severity | 'off'>('lint.loadUncheckedSeverity', 'hint'),
+    ruleSeverity: config.get<Record<string, Severity | 'off' | 'default'>>('lint.rules', {}),
   });
 }
 
@@ -521,7 +522,7 @@ async function lintWorkspace(collection: vscode.DiagnosticCollection) {
   if (pick === 'Show Problems') void vscode.commands.executeCommand('workbench.actions.view.problems');
 }
 
-async function importExport(collection: vscode.DiagnosticCollection) {
+async function importExport(collection: vscode.DiagnosticCollection, context: vscode.ExtensionContext) {
   const [file] = (await vscode.window.showOpenDialog({
     title: 'Calc Code: report to import (PY0080 PDF, or an export with CDH, sequence and source columns)',
     openLabel: 'Import',
@@ -548,36 +549,140 @@ async function importExport(collection: vscode.DiagnosticCollection) {
   })) ?? [];
   if (!folder) return;
 
-  const targets = calcs.map((c) => ({ calc: c, uri: vscode.Uri.joinPath(folder, calcFileName(c)) }));
-  const exists = await Promise.all(targets.map((t) => vscode.workspace.fs.stat(t.uri).then(() => true, () => false)));
-  let overwrite = false;
-  if (exists.some(Boolean)) {
-    const n = exists.filter(Boolean).length;
-    const pick = await vscode.window.showWarningMessage(`Calc Code: ${n} of the ${calcs.length} calc files already exist in this folder.`, { modal: true }, 'Keep existing files', 'Overwrite');
+  const layout = await pickLayout(context, folder);
+  if (!layout) return;
+
+  const enc = new TextEncoder();
+  const targets = calcs.map((c) => ({ calc: c, uri: vscode.Uri.joinPath(folder, ...calcPath(c, layout.pattern, layout).split('/')), text: c.lines.join('\n') + '\n' }));
+  if (new Set(targets.map((t) => t.uri.toString())).size !== targets.length) {
+    void vscode.window.showErrorMessage(`Calc Code: the file pattern "${layout.pattern}" gives the same file for more than one CDH. It needs \${cdh} in it.`);
+    return;
+  }
+
+  // what is already there: nothing, the same text, or different text
+  const sameText = (a: string, b: string) => a.replace(/\r\n/g, '\n') === b.replace(/\r\n/g, '\n');
+  const onDisk = await Promise.all(targets.map((t) => vscode.workspace.fs.readFile(t.uri).then((b) => new TextDecoder('utf-8').decode(b), () => undefined)));
+  const differs = targets.filter((t, k) => onDisk[k] !== undefined && !sameText(onDisk[k]!, t.text));
+  const unchanged = targets.filter((t, k) => onDisk[k] !== undefined && sameText(onDisk[k]!, t.text));
+  const skip = new Set<string>();
+  if (differs.length) {
+    const committed = await committedInGit(differs.map((t) => t.uri));
+    const exposed = differs.filter((t) => !committed.has(t.uri.toString()));
+    const names = (list: typeof differs) => list.slice(0, 6).map((t) => vscode.workspace.asRelativePath(t.uri, false)).join(', ') + (list.length > 6 ? ', ...' : '');
+    const message = `Calc Code: ${differs.length} existing calc ${differs.length === 1 ? 'file differs' : 'files differ'} from this import.`;
+    const detail = exposed.length === 0
+      ? 'Each one is committed in git with no pending changes, so overwriting shows up as an ordinary diff you can review or discard.'
+      : `${exposed.length} of them ${exposed.length === 1 ? 'has' : 'have'} no committed copy (uncommitted changes, not tracked, or no git repository here): ${names(exposed)}. Overwriting replaces that text for good.\n\nTo import next to your own files instead, cancel and choose a layout with a label, such as 1196.prod.calc.`;
+    const some = exposed.length > 0 && exposed.length < differs.length;
+    const pick = await vscode.window.showWarningMessage(message, { modal: true, detail }, exposed.length ? 'Overwrite all' : 'Overwrite', ...(some ? ['Overwrite committed files only'] : []), 'Keep existing files');
     if (!pick) return;
-    overwrite = pick === 'Overwrite';
+    if (pick === 'Keep existing files') for (const t of differs) skip.add(t.uri.toString());
+    if (pick === 'Overwrite committed files only') for (const t of exposed) skip.add(t.uri.toString());
   }
 
-  const written: vscode.Uri[] = [];
+  const same = new Set(unchanged.map((t) => t.uri.toString()));
+  const checked: vscode.Uri[] = [];
   const notes = new Map<string, string[]>();
+  const madeDirs = new Set<string>();
+  let added = 0, updated = 0;
   for (const [k, t] of targets.entries()) {
-    if (exists[k] && !overwrite) continue;
-    await vscode.workspace.fs.writeFile(t.uri, new TextEncoder().encode(t.calc.lines.join('\n') + '\n'));
-    written.push(t.uri);
-    if (t.calc.notes.length) notes.set(t.uri.toString(), t.calc.notes);
+    const key = t.uri.toString();
+    if (skip.has(key)) continue;
+    if (!same.has(key)) {
+      const dir = vscode.Uri.joinPath(t.uri, '..');
+      if (!madeDirs.has(dir.toString())) { await vscode.workspace.fs.createDirectory(dir); madeDirs.add(dir.toString()); }
+      await vscode.workspace.fs.writeFile(t.uri, enc.encode(t.text));
+      if (onDisk[k] === undefined) added++; else updated++;
+    }
+    checked.push(t.uri);
+    if (t.calc.notes.length) notes.set(key, t.calc.notes);
   }
 
-  const kept = calcs.length - written.length;
+  const counts = [`${added} new`, `${updated} updated`, `${unchanged.length} unchanged`, ...(skip.size ? [`${skip.size} kept as they were`] : [])].join(', ');
   const heading = [
-    `Imported ${written.length} calc codes from ${file.fsPath}`,
-    `  into ${folder.fsPath}${kept ? ` (${kept} existing files kept)` : ''}`,
+    `Imported ${calcs.length} calc codes from ${file.fsPath}`,
+    `  into ${folder.fsPath} as ${calcPath({ cdh: calcs[0].cdh, title: calcs[0].title }, layout.pattern, layout)}, ...`,
+    `  ${counts}`,
+    ...(updated ? ['  updated: ' + targets.filter((t, k) => onDisk[k] !== undefined && !same.has(t.uri.toString()) && !skip.has(t.uri.toString())).map((t) => vscode.workspace.asRelativePath(t.uri, false)).join(', ')] : []),
     ...(parsed.skipped ? [`  ${parsed.skipped} rows without a CDH number were skipped (titles, totals, blank rows)`] : []),
     '',
   ];
-  const summary = written.length ? await checkFiles(written, collection, heading, notes) : 'nothing new to check';
+  const summary = checked.length ? await checkFiles(checked, collection, heading, notes) : 'nothing to check';
   const outside = !vscode.workspace.getWorkspaceFolder(folder);
-  const pick = await vscode.window.showInformationMessage(`Calc Code: imported ${written.length} calc codes${kept ? `, kept ${kept} existing` : ''}. ${summary}.`, 'Show report', ...(outside ? ['Open folder'] : []));
+  const pick = await vscode.window.showInformationMessage(`Calc Code: import done, ${counts}. ${summary}.`, 'Show report', ...(outside ? ['Open folder'] : []));
   if (pick === 'Show report') reportChannel?.show(true);
   if (pick === 'Open folder') void vscode.commands.executeCommand('vscode.openFolder', folder, { forceNewWindow: false });
+}
+
+/** File layout for this import: a few ready-made patterns, or the one from settings. */
+async function pickLayout(context: vscode.ExtensionContext, folder: vscode.Uri): Promise<{ pattern: string; label?: string; typeFolders: Record<string, string> } | undefined> {
+  const config = vscode.workspace.getConfiguration('calccode', folder);
+  const typeFolders = { ...DEFAULT_TYPE_FOLDERS, ...(config.get<Record<string, string>>('import.typeFolders') ?? {}) };
+  const custom = (config.get<string>('import.filePattern') ?? '').trim();
+  const example = (pattern: string) => calcPath({ cdh: 1196, title: 'medical premium' }, pattern, { label: 'XLABELX', typeFolders }).replace('XLABELX', '<label>');
+  const ready: [string, string][] = [
+    [DEFAULT_FILE_PATTERN, 'one folder, one file per CDH'],
+    ['${cdh}.${label}.calc', 'next to your own files: asks for a label such as prod or test'],
+    ['${type}/${cdh}.calc', 'a folder per kind of CDH (names: calccode.import.typeFolders)'],
+    ['${type}/${cdh}.${label}.calc', 'a folder per kind of CDH, with a label'],
+  ];
+  if (custom && !ready.some(([p]) => p === custom)) ready.unshift([custom, 'from the setting calccode.import.filePattern']);
+  const last = context.globalState.get<string>('import.lastPattern');
+  ready.sort((a, b) => Number(b[0] === last) - Number(a[0] === last));
+  const pick = await vscode.window.showQuickPick(
+    ready.map(([pattern, description]) => ({ label: example(pattern), description, pattern })),
+    { title: 'Calc Code: how to name the imported files', placeHolder: 'File layout (example for CDH 1196)' },
+  );
+  if (!pick) return undefined;
+
+  let label: string | undefined;
+  if (patternNeedsLabel(pick.pattern)) {
+    label = await vscode.window.showInputBox({
+      title: 'Calc Code: label for this import',
+      prompt: `Goes into every file name, for example ${example(pick.pattern).replace('<label>', 'prod')}`,
+      placeHolder: 'prod, test, 2026-09-17',
+      value: context.workspaceState.get<string>('import.lastLabel') ?? '',
+      validateInput: (v) => (/^[A-Za-z0-9][A-Za-z0-9_-]{0,23}$/.test(v.trim()) ? undefined : 'Letters, digits, - and _ only, up to 24 characters'),
+    });
+    if (label === undefined) return undefined;
+    label = label.trim();
+    void context.workspaceState.update('import.lastLabel', label);
+  }
+  void context.globalState.update('import.lastPattern', pick.pattern);
+  return { pattern: pick.pattern, label, typeFolders };
+}
+
+// The built-in Git extension, when it is there. Only the parts used here.
+interface GitChange { uri: vscode.Uri }
+interface GitRepository {
+  state: { workingTreeChanges: GitChange[]; indexChanges: GitChange[]; mergeChanges: GitChange[]; untrackedChanges?: GitChange[] };
+  status(): Promise<void>;
+  show(ref: string, path: string): Promise<string>;
+}
+interface GitApi { getRepository(uri: vscode.Uri): GitRepository | null }
+
+/** The files whose current text is safe in git: tracked at HEAD and no pending change of any kind. */
+async function committedInGit(uris: vscode.Uri[]): Promise<Set<string>> {
+  const safe = new Set<string>();
+  try {
+    const ext = vscode.extensions.getExtension<{ getAPI(version: 1): GitApi }>('vscode.git');
+    if (!ext) return safe;
+    const api = (ext.isActive ? ext.exports : await ext.activate()).getAPI(1);
+    const pending = new Map<GitRepository, Set<string>>();
+    const fold = (u: vscode.Uri) => (process.platform === 'win32' ? u.fsPath.toLowerCase() : u.fsPath);
+    for (const uri of uris) {
+      const repo = api.getRepository(uri);
+      if (!repo) continue;
+      if (!pending.has(repo)) {
+        await repo.status();
+        const st = repo.state;
+        pending.set(repo, new Set([...st.workingTreeChanges, ...st.indexChanges, ...st.mergeChanges, ...(st.untrackedChanges ?? [])].map((c) => fold(c.uri))));
+      }
+      if (pending.get(repo)!.has(fold(uri))) continue;
+      // not listed as changed can still mean ignored or hidden untracked: ask for the committed copy
+      try { await repo.show('HEAD', uri.fsPath); safe.add(uri.toString()); } catch { /* not in HEAD */ }
+    }
+  } catch { /* no git: nothing is known to be safe */ }
+  return safe;
 }
 

@@ -1,7 +1,7 @@
 // Plain assertion tests for the import core (no test runner needed):
 //   bun test/import.test.ts
 import { strict as assert } from 'assert';
-import { assembleCalcs, calcFileName, decodeExport, parseExport } from '../lib/import-core';
+import { assembleCalcs, calcPath, decodeExport, parseExport } from '../lib/import-core';
 import { isPdf, parsePdfExport } from '../lib/import-pdf';
 import { reindent } from '../src/format';
 
@@ -67,7 +67,8 @@ t('CSV: header names, quoting, indentation kept as exported', () => {
   assert.equal(p.skipped, 1);
   const [c] = assembleCalcs(p.rows, { reindent: () => { throw new Error('must not reindent'); } });
   assert.deepEqual(c.lines, ['IF NVAR0 > 0', '  WARN("A, B", NVAR0)', 'ENDIF']);
-  assert.equal(calcFileName(c), '3004-salary-adj.calc');
+  assert.equal(calcPath(c), '3004.calc');
+  assert.equal(calcPath(c, '${cdh}-${title}.calc'), '3004-salary-adj.calc');
 });
 
 t('Cognos CSV: UTF-16LE with BOM, tab delimited', () => {
@@ -77,7 +78,7 @@ t('Cognos CSV: UTF-16LE with BOM, tab delimited', () => {
   for (let i = 0; i < text.length; i++) { bytes[2 + i * 2] = text.charCodeAt(i); bytes[3 + i * 2] = 0; }
   const [c] = assembleCalcs(parseExport(decodeExport(bytes)).rows);
   assert.deepEqual(c.lines, ['NVAR0 := 1', 'WARN("X =", NVAR0)']);
-  assert.equal(calcFileName(c), '1010.calc');
+  assert.equal(calcPath(c, '${cdh}-${title}.calc'), '1010.calc');
 });
 
 t('no header: columns by position', () => {
@@ -106,6 +107,19 @@ t('duplicate sequence rows are reported', () => {
   assert.equal(c.lines.length, 4);
   assert.equal(c.notes.length, 1);
   assert.match(c.notes[0], /^sequence 01 appears more than once/);
+});
+
+t('file patterns: label, type folders, custom folders, unsafe input', () => {
+  const c = { cdh: 3004, title: 'Salary Adj' };
+  assert.equal(calcPath(c, '${cdh}.${label}.calc', { label: 'prod' }), '3004.prod.calc');
+  assert.equal(calcPath(c, '${cdh}.${label}.calc', { label: '' }), '3004.calc');
+  assert.equal(calcPath(c, '${type}/${cdh}.calc'), 'PYUPHH/3004.calc');
+  assert.equal(calcPath({ cdh: 1196 }, '${type}/${cdh}.${label}.calc', { label: 'test', typeFolders: { '1': 'contributions', other: 'misc' } }), 'contributions/1196.test.calc');
+  assert.equal(calcPath({ cdh: 4100 }, '${type}/${cdh}.calc', { typeFolders: { '1': 'c', other: 'misc' } }), 'misc/4100.calc');
+  assert.equal(calcPath({ cdh: 4100 }, '${type}/${cdh}.calc'), 'other/4100.calc');
+  assert.equal(calcPath(c, '${type}/${cdh}-${title}/${label}.calc', { label: 'prod' }), 'PYUPHH/3004-salary-adj/prod.calc');
+  assert.equal(calcPath(c, '..\\..\\${cdh}', { label: 'x' }), '3004.calc');
+  assert.equal(calcPath(c, '${cdh}.${label}.calc', { label: '../up' }), '3004...up.calc'); // no separator survives, so no way out of the folder
 });
 
 // Shape of the CDD report PY0080 PDF: one exact string per field, placed with Tm.

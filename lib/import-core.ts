@@ -220,7 +220,48 @@ export function assembleCalcs(rows: SrcRow[], opts: AssembleOptions = {}): Impor
   return out;
 }
 
-export function calcFileName(c: Pick<ImportedCalc, 'cdh' | 'title'>): string {
-  const slug = (c.title ?? '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40).replace(/-+$/, '');
-  return slug ? `${c.cdh}-${slug}.calc` : `${c.cdh}.calc`;
+// ---------------------------------------------------------------------------
+// Where each calc goes
+// ---------------------------------------------------------------------------
+
+/** Folder per kind of CDH, by the first digit of the number. */
+export const DEFAULT_TYPE_FOLDERS: Record<string, string> = { '1': 'PYUPCC', '2': 'PYUPDD', '3': 'PYUPHH' };
+export const DEFAULT_FILE_PATTERN = '${cdh}.calc';
+
+export interface PathOptions {
+  /** Replaces ${label}: what this import is, such as prod or test. */
+  label?: string;
+  /** Replaces ${type}: first digit of the CDH number to folder name. */
+  typeFolders?: Record<string, string>;
+}
+
+export const patternNeedsLabel = (pattern: string) => pattern.includes('${label}');
+
+const slugOf = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40).replace(/-+$/, '');
+const cleanSegment = (s: string) => s.replace(/[<>:"|?*\\\x00-\x1f]/g, '').replace(/^\.+$/, '').trim();
+
+/**
+ * Path of a calc file under the import folder, '/' separated, from a pattern:
+ *   ${cdh}                      the CDH number
+ *   ${label}                    the label given for this import (prod, test, a date)
+ *   ${type}                     folder for the kind of CDH (typeFolders, by first digit)
+ *   ${title}                    the CDH title as a slug, when the export has one
+ * An empty ${label} or ${title} takes the separator in front of it along, so
+ * "${cdh}-${title}.calc" is "1196.calc" for an export without titles.
+ */
+export function calcPath(c: Pick<ImportedCalc, 'cdh' | 'title'>, pattern = DEFAULT_FILE_PATTERN, opts: PathOptions = {}): string {
+  const folders = opts.typeFolders ?? DEFAULT_TYPE_FOLDERS;
+  const values: Record<string, string> = {
+    cdh: String(c.cdh),
+    label: cleanSegment(opts.label ?? '').replace(/\//g, ''),
+    type: cleanSegment(folders[String(c.cdh)[0]] ?? folders.other ?? 'other'),
+    title: slugOf(c.title ?? ''),
+  };
+  let path = (pattern.trim() || DEFAULT_FILE_PATTERN).replace(/\\/g, '/');
+  path = path.replace(/([-._ ]?)\$\{(\w+)\}/g, (whole, sep: string, key: string) => (key in values ? (values[key] ? sep + values[key] : '') : whole));
+  const segments = path.split('/').map(cleanSegment).filter((seg) => seg !== '' && seg !== '.' && seg !== '..');
+  let name = segments.pop() ?? '';
+  if (!/\.calc$/i.test(name)) name += '.calc';
+  if (name.toLowerCase() === '.calc') name = `${c.cdh}.calc`;
+  return [...segments, name].join('/');
 }

@@ -72,9 +72,28 @@ one step. Nothing leaves your machine: the import reads the report file and writ
    Calc Code: Import calc codes from a report export.
 3. Pick the PDF, then the folder for the calc files.
 
-The import writes one file per CDH (`1196.calc`), checks them all, lists every finding
-in the Problems panel and opens a summary under Show report. Files that already exist
-are kept unless you choose Overwrite.
+The import writes one file per CDH, checks them all, lists every finding in the Problems
+panel and opens a summary under Show report.
+
+**File layout.** Each import asks how to name the files:
+
+- `1196.calc`: one folder, one file per CDH.
+- `1196.<label>.calc`: asks for a label such as `prod` or `test`. Use this to pull the
+  codes as they are on a system without touching the files you are working on, or to
+  keep production and test side by side and compare them.
+- `PYUPCC/1196.calc` or `PYUPCC/1196.<label>.calc`: a folder per kind of CDH, by the first
+  digit of the number (1 contributions, 2 deductions, 3 hours). Rename the folders with
+  the `calccode.import.typeFolders` setting.
+- Your own pattern from the `calccode.import.filePattern` setting, for example
+  `${type}/${cdh}/${label}.calc`.
+
+**Importing again.** Files whose text already matches are left alone, and the report
+lists the ones that changed, so a second import shows what changed on the system since
+the first. Before a file with different text is overwritten the import asks. When the
+folder is a git repository it also checks each of those files: one that is committed
+with no pending changes is safe to overwrite, because the change is an ordinary diff.
+Files with uncommitted changes, untracked files and folders without git are named in
+the warning, and Overwrite committed files only leaves them alone.
 
 The PDF holds every source line exactly as stored, indentation and tabs included, and
 the import reads those strings directly. It does not work on a scanned or re-printed
@@ -89,7 +108,7 @@ Other sources work too:
 - Any comma or tab delimited export with a header row and one row per source line.
   Column names recognized: `CDH`, `Sequence` or `Line #`, `Calculation`, or the table's
   own `py_cdh_no`, `pys_seq`, `pys_src`. A fourth column named `Title` or `Description`
-  goes into the file name (`1196-medical-premium.calc`). From SQL:
+  is available to a file pattern as `${title}` (`1196-medical-premium.calc`). From SQL:
 
 ```sql
 SELECT py_cdh_no, pys_seq, pys_src FROM pys_src_dtl ORDER BY py_cdh_no, pys_seq
@@ -109,7 +128,10 @@ folder at any time.
 | `calccode.lint.enabled` | `true` | Check files as you type. |
 | `calccode.lint.unknownNameSeverity` | `warning` | Severity for a cluster or attribute not in the library. |
 | `calccode.lint.loadUncheckedSeverity` | `hint` | Severity for a LOAD with no MSCX.STATUS check. |
+| `calccode.lint.rules` | `{}` | Turn any check off or change its severity, by rule code (see below). |
 | `calccode.library.extraClusters` | `{}` | Site-specific clusters and attributes to add. |
+| `calccode.import.filePattern` | empty | Your own import file layout, from `${cdh}`, `${label}`, `${type}`, `${title}`. |
+| `calccode.import.typeFolders` | `PYUPCC`, `PYUPDD`, `PYUPHH` | Folder names for `${type}`, by first digit of the CDH number. |
 
 Example of a site addition in `settings.json`:
 
@@ -126,6 +148,79 @@ Example of a site addition in `settings.json`:
 ```
 
 Attributes given for an existing cluster are merged into it.
+
+### Turning checks off or changing their severity
+
+Every finding ends with its rule code in brackets, such as `[tab]`. Set a code to `off`,
+`hint`, `info`, `warning` or `error` in `calccode.lint.rules`:
+
+```json
+"calccode.lint.rules": {
+  "tab": "off",
+  "load-unchecked": "warning",
+  "uninit": "hint"
+}
+```
+
+| Rule code | What it covers |
+|---|---|
+| `width` | line over 58 characters (the editor wraps the 59th and merges tokens) |
+| `tab` | tab character |
+| `corrupt` | paste corruption such as PYPX.BEG1DO, HOURSX, ENDIFIF |
+| `comment` | comment never closed, or a stray >> |
+| `block` | IF/ELSE/ENDIF and DO/UNTIL structure |
+| `syntax` | statements that are not calc code |
+| `operator` | words and operators from other languages: ==, !=, THEN, ELSEIF, ENDDO |
+| `assign-eq` | = used where := is meant |
+| `lhs` | assignment to something that cannot be assigned |
+| `paren` | unmatched parentheses |
+| `quote` | string not closed on its line |
+| `cluster-unknown` | cluster name not in the library |
+| `attr-unknown` | attribute name not in the library |
+| `array-index` | {n} missing, out of range, or used on a scalar |
+| `load-form` | LOAD with a key other than the documented one |
+| `load-unchecked` | LOAD not followed by an MSCX.STATUS check |
+| `goto` | GOTO to a missing label, labels never used |
+| `type` | NVAR and CVAR type mix-ups |
+| `round-arg` | ROUND on something that is not an NVAR |
+| `rate-round` | a rounded register assigned to .RATE |
+| `uninit` | register read but never assigned |
+| `unknown-word` | unknown function, or a bare word |
+
+A severity set here applies to every finding of that rule. Some rules report at more
+than one level by default (`type` has errors and warnings), and `off` is the usual use.
+
+### Colors
+
+Colors come from your color theme: the extension only labels each piece of text
+(comment, keyword, cluster, attribute, register, string) and the theme paints it. To
+change one color for calc code only, add a rule for its scope to `settings.json`:
+
+```json
+"editor.tokenColorCustomizations": {
+  "textMateRules": [
+    { "scope": "support.class.record.calccode", "settings": { "foreground": "#4EC9B0" } },
+    { "scope": "comment.block.calccode", "settings": { "foreground": "#6A9955", "fontStyle": "italic" } }
+  ]
+}
+```
+
+| Scope | Text |
+|---|---|
+| `comment.block.calccode` | `<< ... >>` comments |
+| `keyword.control.calccode` | IF, ELSE, ENDIF, DO, UNTIL, GOTO, STOP |
+| `keyword.operator.logical.calccode` | AND, OR, NOT |
+| `support.function.calccode` | LOAD, WARN, ROUND2 and the other functions |
+| `support.class.record.calccode` | the cluster in `CLUSTER.ATTR` |
+| `support.variable.field.calccode` | the attribute in `CLUSTER.ATTR` |
+| `variable.other.numeric.calccode` | NVAR registers |
+| `variable.other.character.calccode` | CVAR registers |
+| `entity.name.label.calccode` | GOTO labels |
+| `string.quoted.double.calccode` | strings |
+| `constant.numeric.calccode` | numbers |
+
+Developer: Inspect Editor Tokens and Scopes in the command palette shows the scope of
+whatever is under the cursor.
 
 ## Rules the checker encodes
 

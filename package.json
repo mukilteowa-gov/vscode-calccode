@@ -123,6 +123,295 @@
           "default": "hint",
           "description": "Severity for a LOAD that is not followed by an MSCX.STATUS check."
         },
+        "calccode.lint.rules": {
+          "type": "object",
+          "default": {},
+          "markdownDescription": "Turn a check off or change its severity, by rule code. The code is the word in brackets at the end of a finding, such as `[tab]`. Example: `{ \"tab\": \"off\", \"load-unchecked\": \"warning\", \"uninit\": \"hint\" }`. A severity here applies to every finding of that rule and wins over the two settings above.",
+          "properties": {
+            "width": {
+              "type": "string",
+              "enum": [
+                "default",
+                "off",
+                "hint",
+                "info",
+                "warning",
+                "error"
+              ],
+              "description": "line over 58 characters (the editor wraps the 59th and merges tokens)"
+            },
+            "tab": {
+              "type": "string",
+              "enum": [
+                "default",
+                "off",
+                "hint",
+                "info",
+                "warning",
+                "error"
+              ],
+              "description": "tab character"
+            },
+            "corrupt": {
+              "type": "string",
+              "enum": [
+                "default",
+                "off",
+                "hint",
+                "info",
+                "warning",
+                "error"
+              ],
+              "description": "paste corruption such as PYPX.BEG1DO, HOURSX, ENDIFIF"
+            },
+            "comment": {
+              "type": "string",
+              "enum": [
+                "default",
+                "off",
+                "hint",
+                "info",
+                "warning",
+                "error"
+              ],
+              "description": "comment never closed, or a stray >>"
+            },
+            "block": {
+              "type": "string",
+              "enum": [
+                "default",
+                "off",
+                "hint",
+                "info",
+                "warning",
+                "error"
+              ],
+              "description": "IF/ELSE/ENDIF and DO/UNTIL structure"
+            },
+            "syntax": {
+              "type": "string",
+              "enum": [
+                "default",
+                "off",
+                "hint",
+                "info",
+                "warning",
+                "error"
+              ],
+              "description": "statements that are not calc code"
+            },
+            "operator": {
+              "type": "string",
+              "enum": [
+                "default",
+                "off",
+                "hint",
+                "info",
+                "warning",
+                "error"
+              ],
+              "description": "words and operators from other languages: ==, !=, THEN, ELSEIF, ENDDO"
+            },
+            "assign-eq": {
+              "type": "string",
+              "enum": [
+                "default",
+                "off",
+                "hint",
+                "info",
+                "warning",
+                "error"
+              ],
+              "description": "= used where := is meant"
+            },
+            "lhs": {
+              "type": "string",
+              "enum": [
+                "default",
+                "off",
+                "hint",
+                "info",
+                "warning",
+                "error"
+              ],
+              "description": "assignment to something that cannot be assigned"
+            },
+            "paren": {
+              "type": "string",
+              "enum": [
+                "default",
+                "off",
+                "hint",
+                "info",
+                "warning",
+                "error"
+              ],
+              "description": "unmatched parentheses"
+            },
+            "quote": {
+              "type": "string",
+              "enum": [
+                "default",
+                "off",
+                "hint",
+                "info",
+                "warning",
+                "error"
+              ],
+              "description": "string not closed on its line"
+            },
+            "cluster-unknown": {
+              "type": "string",
+              "enum": [
+                "default",
+                "off",
+                "hint",
+                "info",
+                "warning",
+                "error"
+              ],
+              "description": "cluster name not in the library"
+            },
+            "attr-unknown": {
+              "type": "string",
+              "enum": [
+                "default",
+                "off",
+                "hint",
+                "info",
+                "warning",
+                "error"
+              ],
+              "description": "attribute name not in the library"
+            },
+            "array-index": {
+              "type": "string",
+              "enum": [
+                "default",
+                "off",
+                "hint",
+                "info",
+                "warning",
+                "error"
+              ],
+              "description": "{n} missing, out of range, or used on a scalar"
+            },
+            "load-form": {
+              "type": "string",
+              "enum": [
+                "default",
+                "off",
+                "hint",
+                "info",
+                "warning",
+                "error"
+              ],
+              "description": "LOAD with a key other than the documented one"
+            },
+            "load-unchecked": {
+              "type": "string",
+              "enum": [
+                "default",
+                "off",
+                "hint",
+                "info",
+                "warning",
+                "error"
+              ],
+              "description": "LOAD not followed by an MSCX.STATUS check"
+            },
+            "goto": {
+              "type": "string",
+              "enum": [
+                "default",
+                "off",
+                "hint",
+                "info",
+                "warning",
+                "error"
+              ],
+              "description": "GOTO to a missing label, labels never used"
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "default",
+                "off",
+                "hint",
+                "info",
+                "warning",
+                "error"
+              ],
+              "description": "NVAR and CVAR type mix-ups"
+            },
+            "round-arg": {
+              "type": "string",
+              "enum": [
+                "default",
+                "off",
+                "hint",
+                "info",
+                "warning",
+                "error"
+              ],
+              "description": "ROUND on something that is not an NVAR"
+            },
+            "rate-round": {
+              "type": "string",
+              "enum": [
+                "default",
+                "off",
+                "hint",
+                "info",
+                "warning",
+                "error"
+              ],
+              "description": "a rounded register assigned to .RATE"
+            },
+            "uninit": {
+              "type": "string",
+              "enum": [
+                "default",
+                "off",
+                "hint",
+                "info",
+                "warning",
+                "error"
+              ],
+              "description": "register read but never assigned"
+            },
+            "unknown-word": {
+              "type": "string",
+              "enum": [
+                "default",
+                "off",
+                "hint",
+                "info",
+                "warning",
+                "error"
+              ],
+              "description": "unknown function, or a bare word"
+            }
+          },
+          "additionalProperties": false
+        },
+        "calccode.import.filePattern": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Your own file layout for Calc Code: Import calc codes, offered first in the layout list. Placeholders: `${cdh}` the CDH number, `${label}` a label asked for at each import (prod, test), `${type}` a folder per kind of CDH, `${title}` the CDH title when the export has one. Folders with `/`. Example: `${type}/${cdh}/${label}.calc`. Must contain `${cdh}`."
+        },
+        "calccode.import.typeFolders": {
+          "type": "object",
+          "default": {
+            "1": "PYUPCC",
+            "2": "PYUPDD",
+            "3": "PYUPHH"
+          },
+          "markdownDescription": "Folder names for `${type}` in an import layout, by the first digit of the CDH number (1 contributions, 2 deductions, 3 hours). Add `other` for anything else. Example: `{ \"1\": \"contributions\", \"2\": \"deductions\", \"3\": \"hours\" }`.",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
         "calccode.library.extraClusters": {
           "type": "object",
           "default": {},
