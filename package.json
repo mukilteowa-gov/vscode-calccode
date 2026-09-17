@@ -2,7 +2,7 @@
   "name": "calccode",
   "displayName": "Calc Code (CentralSquare payroll)",
   "description": "Editor for CentralSquare Finance Enterprise payroll calc code: syntax coloring, cluster and attribute library with hover and completion, syntax checking, formatter, snippets and a bundled cluster reference.",
-  "version": "0.9.3",
+  "version": "0.10.0",
   "publisher": "CityofMukilteo",
   "license": "MIT",
   "repository": {
@@ -65,6 +65,16 @@
       {
         "command": "calccode.lintFile",
         "title": "Calc Code: Check current file",
+        "category": "Calc Code"
+      },
+      {
+        "command": "calccode.lintWorkspace",
+        "title": "Calc Code: Check all calc files",
+        "category": "Calc Code"
+      },
+      {
+        "command": "calccode.importExport",
+        "title": "Calc Code: Import calc codes from a report export",
         "category": "Calc Code"
       }
     ],
@@ -137,7 +147,7 @@
   "scripts": {
     "compile": "bun x esbuild src/extension.ts --bundle --outfile=out/extension.js --external:vscode --format=cjs --platform=node --target=node16",
     "watch": "bun x esbuild src/extension.ts --bundle --outfile=out/extension.js --external:vscode --format=cjs --platform=node --target=node16 --sourcemap --watch",
-    "test": "bun test/format.test.ts && bun test/lint.test.ts",
+    "test": "bun test/format.test.ts && bun test/lint.test.ts && bun test/import.test.ts",
     "package": "bun run test && bun run compile && bun --bun node_modules/@vscode/vsce/vsce package --no-dependencies"
   },
   "devDependencies": {

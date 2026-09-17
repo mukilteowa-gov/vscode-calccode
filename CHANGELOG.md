@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.10.0
+
+- Import calc codes from a report: the PDF of the CDD report Payroll CDH Calculation
+  Source (PY0080), read exactly as stored with no PDF library; Cognos XML or CSV of the
+  report CDH Calc Source (FEPY0080D); or any comma or tab delimited export with CDH,
+  sequence and source columns. Writes one `.calc` file per CDH, restores indentation
+  when the export dropped it, reports duplicate sequence rows, then checks every
+  imported file.
+- Check all calc files: checks every `.calc` file in the open folder without opening
+  them, fills the Problems panel and writes a summary report.
+
 ## 0.9.3
 
 Review candidate. First build intended for use outside the site that wrote it.

@@ -6,6 +6,8 @@ Maintainer notes. Not shipped in the .vsix.
 
 ```
 lib/lint-core.ts      the checker, a pure function: text in, issues out
+lib/import-core.ts    report export (Cognos XML, CSV) to one calc per CDH, pure
+lib/import-pdf.ts     the PY0080 PDF: exact strings from the page content, zlib only
 lib/rules.json        editor width, comment markers, paste-corruption tokens
 lib/library.json      cluster and attribute library (generated, see below)
 reference.md          the library as a document (generated)

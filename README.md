@@ -59,6 +59,49 @@ labels and `<< SECTION >>` comment lines.
 `calc-load` (LOAD plus status check), `calc-loop-pypx`, `calc-loop-eadt`,
 `calc-nucd`, `calc-debug`, `calc-if`, `calc-answer`, `calc-init`.
 
+## Import your calc codes
+
+To see what the checker says about the calc codes on your own system, pull them all in
+one step. Nothing leaves your machine: the import reads the report file and writes
+`.calc` files, with no network access.
+
+1. In Finance Enterprise, run the CDD report Payroll CDH Calculation Source (PY0080).
+   Under Selection Criteria Options choose No Criteria, so it prints every CDH. Save
+   the PDF.
+2. In VS Code, open the command palette and run
+   Calc Code: Import calc codes from a report export.
+3. Pick the PDF, then the folder for the calc files.
+
+The import writes one file per CDH (`1196.calc`), checks them all, lists every finding
+in the Problems panel and opens a summary under Show report. Files that already exist
+are kept unless you choose Overwrite.
+
+The PDF holds every source line exactly as stored, indentation and tabs included, and
+the import reads those strings directly. It does not work on a scanned or re-printed
+copy of the report, only on the PDF that Finance Enterprise produced.
+
+Other sources work too:
+
+- The Cognos report CDH Calc Source (FEPY0080D), Run as XML or CSV. This report drops
+  the blanks at the start of each line. When an export has no indentation at all, the
+  import re-indents IF and DO blocks the way Format Document does: the code is the same
+  as on your system, the indentation is not.
+- Any comma or tab delimited export with a header row and one row per source line.
+  Column names recognized: `CDH`, `Sequence` or `Line #`, `Calculation`, or the table's
+  own `py_cdh_no`, `pys_seq`, `pys_src`. A fourth column named `Title` or `Description`
+  goes into the file name (`1196-medical-premium.calc`). From SQL:
+
+```sql
+SELECT py_cdh_no, pys_seq, pys_src FROM pys_src_dtl ORDER BY py_cdh_no, pys_seq
+```
+
+The import also reports a CDH whose stored source has the same sequence more than once.
+The text alone cannot show that. It means rows were duplicated when the calc was saved,
+and that calc is worth a look on the system.
+
+Calc Code: Check all calc files runs the same check on every `.calc` file in the open
+folder at any time.
+
 ## Settings
 
 | Setting | Default | Purpose |

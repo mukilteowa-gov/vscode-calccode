@@ -2,6 +2,8 @@ import * as vscode from 'vscode';
 import { join } from 'path';
 import { reindent } from './format';
 import { lint, type Issue, type Severity } from '../lib/lint-core';
+import { assembleCalcs, calcFileName, decodeExport, parseExport } from '../lib/import-core';
+import { isPdf, parsePdfExport } from '../lib/import-pdf';
 // Bundled at build time (esbuild) so the .vsix is self-contained.
 import libraryJson from '../lib/library.json';
 import rulesJson from '../lib/rules.json';
@@ -125,6 +127,8 @@ export function activate(context: vscode.ExtensionContext) {
       const doc = vscode.window.activeTextEditor?.document;
       if (doc && doc.languageId === LANG) void lintDocument(doc, diagnostics);
     }),
+    vscode.commands.registerCommand('calccode.lintWorkspace', () => lintWorkspace(diagnostics)),
+    vscode.commands.registerCommand('calccode.importExport', () => importExport(diagnostics)),
   );
   const diagnostics = registerDiagnostics(context);
 }
@@ -414,7 +418,11 @@ function registerDiagnostics(context: vscode.ExtensionContext): vscode.Diagnosti
     vscode.workspace.onDidOpenTextDocument((d) => schedule(d, 0)),
     vscode.workspace.onDidSaveTextDocument((d) => schedule(d, 0)),
     vscode.workspace.onDidChangeTextDocument((e) => schedule(e.document, 300)),
-    vscode.workspace.onDidCloseTextDocument((d) => collection.delete(d.uri)),
+    vscode.workspace.onDidCloseTextDocument((d) => {
+      // a file covered by "Check all calc files" keeps its findings, from the saved text
+      if (folderChecked.has(d.uri.toString())) void lintUri(d.uri, collection).catch(() => collection.delete(d.uri));
+      else collection.delete(d.uri);
+    }),
     vscode.workspace.onDidChangeConfiguration((e) => { if (e.affectsConfiguration('calccode')) for (const doc of vscode.workspace.textDocuments) schedule(doc, 0); }),
   );
   for (const doc of vscode.workspace.textDocuments) schedule(doc, 0);
@@ -428,27 +436,148 @@ const SEV: Record<Severity, vscode.DiagnosticSeverity> = {
   hint: vscode.DiagnosticSeverity.Hint,
 };
 
-function toDiagnostic(document: vscode.TextDocument, i: Issue): vscode.Diagnostic {
-  const line = Math.min(Math.max(0, (i.line || 1) - 1), document.lineCount - 1);
-  const text = document.lineAt(line);
+function toDiagnostic(lines: string[], i: Issue): vscode.Diagnostic {
+  const line = Math.min(Math.max(0, (i.line || 1) - 1), Math.max(0, lines.length - 1));
+  const text = lines[line] ?? '';
   const start = Math.max(0, (i.col || 1) - 1);
-  const end = i.endCol ? Math.max(start + 1, i.endCol - 1) : Math.max(start + 1, text.text.length);
-  const d = new vscode.Diagnostic(new vscode.Range(line, Math.min(start, text.text.length), line, Math.min(end, Math.max(text.text.length, start + 1))), i.msg, SEV[i.severity]);
+  const end = i.endCol ? Math.max(start + 1, i.endCol - 1) : Math.max(start + 1, text.length);
+  const d = new vscode.Diagnostic(new vscode.Range(line, Math.min(start, text.length), line, Math.min(end, Math.max(text.length, start + 1))), i.msg, SEV[i.severity]);
   d.source = 'calccode';
   d.code = i.code;
   if (i.code === 'uninit' || i.code === 'goto') d.tags = [vscode.DiagnosticTag.Unnecessary];
   return d;
 }
 
-async function lintDocument(document: vscode.TextDocument, collection: vscode.DiagnosticCollection) {
+function lintText(text: string): Issue[] {
   const config = vscode.workspace.getConfiguration('calccode');
-  if (!config.get<boolean>('lint.enabled', true)) { collection.delete(document.uri); return; }
-  const issues = lint(document.getText(), {
+  return lint(text, {
     library: LIB,
     rules: RULES,
     unknownNameSeverity: config.get<Severity>('lint.unknownNameSeverity', 'warning'),
     loadUncheckedSeverity: config.get<Severity | 'off'>('lint.loadUncheckedSeverity', 'hint'),
   });
-  collection.set(document.uri, issues.map((i) => toDiagnostic(document, i)));
+}
+
+async function lintDocument(document: vscode.TextDocument, collection: vscode.DiagnosticCollection) {
+  if (!vscode.workspace.getConfiguration('calccode').get<boolean>('lint.enabled', true)) { collection.delete(document.uri); return; }
+  const text = document.getText();
+  const lines = text.split(/\r?\n/);
+  collection.set(document.uri, lintText(text).map((i) => toDiagnostic(lines, i)));
+}
+
+// ---------------------------------------------------------------------------
+// Whole-folder check and import from a report export
+// ---------------------------------------------------------------------------
+const folderChecked = new Set<string>();
+let reportChannel: vscode.OutputChannel | undefined;
+
+/** Check a file from its saved text, without opening it in an editor. */
+async function lintUri(uri: vscode.Uri, collection: vscode.DiagnosticCollection): Promise<Issue[]> {
+  const open = vscode.workspace.textDocuments.find((d) => d.uri.toString() === uri.toString());
+  const text = open ? open.getText() : new TextDecoder('utf-8').decode(await vscode.workspace.fs.readFile(uri));
+  const lines = text.split(/\r?\n/);
+  const issues = lintText(text);
+  collection.set(uri, issues.map((i) => toDiagnostic(lines, i)));
+  folderChecked.add(uri.toString());
+  return issues;
+}
+
+async function checkFiles(uris: vscode.Uri[], collection: vscode.DiagnosticCollection, heading: string[], notes = new Map<string, string[]>()) {
+  const count = (issues: Issue[], sev: Severity) => issues.filter((i) => i.severity === sev).length;
+  const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
+  const body: string[] = [];
+  let errors = 0, warnings = 0, flagged = 0;
+  await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title: 'Calc Code: checking files' }, async (progress) => {
+    for (const uri of [...uris].sort((a, b) => a.fsPath.localeCompare(b.fsPath, undefined, { numeric: true }))) {
+      progress.report({ increment: 100 / uris.length });
+      let issues: Issue[];
+      try { issues = await lintUri(uri, collection); } catch (e) { body.push(`${vscode.workspace.asRelativePath(uri)}  could not be read: ${String((e as Error)?.message ?? e)}`); continue; }
+      const shown = issues.filter((i) => i.severity === 'error' || i.severity === 'warning');
+      const fileNotes = notes.get(uri.toString()) ?? [];
+      if (!shown.length && !fileNotes.length) continue;
+      flagged++;
+      errors += count(issues, 'error');
+      warnings += count(issues, 'warning');
+      body.push(`${vscode.workspace.asRelativePath(uri)}  ${plural(count(issues, 'error'), 'error')}, ${plural(count(issues, 'warning'), 'warning')}`);
+      for (const note of fileNotes) body.push(`  import: ${note}`);
+      for (const i of shown) body.push(`  ${String(i.line || 1).padStart(4)}: ${i.msg} [${i.code}]`);
+    }
+  });
+  const summary = `${plural(uris.length, 'calc file')} checked, ${flagged} with findings (${plural(errors, 'error')}, ${plural(warnings, 'warning')})`;
+  reportChannel ??= vscode.window.createOutputChannel('Calc Code');
+  reportChannel.clear();
+  for (const l of [...heading, summary, '', ...body]) reportChannel.appendLine(l);
+  if (body.length) reportChannel.appendLine('');
+  reportChannel.appendLine('Every finding is also in the Problems panel. Hints and info marks show there and in the editor only.');
+  return summary;
+}
+
+async function lintWorkspace(collection: vscode.DiagnosticCollection) {
+  const uris = await vscode.workspace.findFiles('**/*.calc', '**/node_modules/**');
+  if (!uris.length) { void vscode.window.showInformationMessage('Calc Code: no .calc files in this workspace. Open a folder that holds calc files, or run "Calc Code: Import calc codes from a report export".'); return; }
+  const summary = await checkFiles(uris, collection, []);
+  const pick = await vscode.window.showInformationMessage(`Calc Code: ${summary}.`, 'Show report', 'Show Problems');
+  if (pick === 'Show report') reportChannel?.show(true);
+  if (pick === 'Show Problems') void vscode.commands.executeCommand('workbench.actions.view.problems');
+}
+
+async function importExport(collection: vscode.DiagnosticCollection) {
+  const [file] = (await vscode.window.showOpenDialog({
+    title: 'Calc Code: report to import (PY0080 PDF, or an export with CDH, sequence and source columns)',
+    openLabel: 'Import',
+    canSelectMany: false,
+    filters: { 'Report export': ['pdf', 'xml', 'csv', 'tsv', 'tab', 'txt'], 'All files': ['*'] },
+  })) ?? [];
+  if (!file) return;
+
+  const bytes = await vscode.workspace.fs.readFile(file);
+  const parsed = isPdf(bytes) ? parsePdfExport(bytes) : parseExport(decodeExport(bytes));
+  const calcs = assembleCalcs(parsed.rows, { reindent });
+  if (!calcs.length) {
+    void vscode.window.showErrorMessage('Calc Code: no calc source rows found. Use the PDF of report PY0080 (Payroll CDH Calculation Source), or an export with one row per source line and three columns: CDH number, sequence, source text. See "Import your calc codes" in the extension README.');
+    return;
+  }
+
+  const [folder] = (await vscode.window.showOpenDialog({
+    title: `Calc Code: folder for the ${calcs.length} imported calc files`,
+    openLabel: 'Import here',
+    canSelectFiles: false,
+    canSelectFolders: true,
+    canSelectMany: false,
+    defaultUri: vscode.workspace.workspaceFolders?.[0]?.uri,
+  })) ?? [];
+  if (!folder) return;
+
+  const targets = calcs.map((c) => ({ calc: c, uri: vscode.Uri.joinPath(folder, calcFileName(c)) }));
+  const exists = await Promise.all(targets.map((t) => vscode.workspace.fs.stat(t.uri).then(() => true, () => false)));
+  let overwrite = false;
+  if (exists.some(Boolean)) {
+    const n = exists.filter(Boolean).length;
+    const pick = await vscode.window.showWarningMessage(`Calc Code: ${n} of the ${calcs.length} calc files already exist in this folder.`, { modal: true }, 'Keep existing files', 'Overwrite');
+    if (!pick) return;
+    overwrite = pick === 'Overwrite';
+  }
+
+  const written: vscode.Uri[] = [];
+  const notes = new Map<string, string[]>();
+  for (const [k, t] of targets.entries()) {
+    if (exists[k] && !overwrite) continue;
+    await vscode.workspace.fs.writeFile(t.uri, new TextEncoder().encode(t.calc.lines.join('\n') + '\n'));
+    written.push(t.uri);
+    if (t.calc.notes.length) notes.set(t.uri.toString(), t.calc.notes);
+  }
+
+  const kept = calcs.length - written.length;
+  const heading = [
+    `Imported ${written.length} calc codes from ${file.fsPath}`,
+    `  into ${folder.fsPath}${kept ? ` (${kept} existing files kept)` : ''}`,
+    ...(parsed.skipped ? [`  ${parsed.skipped} rows without a CDH number were skipped (titles, totals, blank rows)`] : []),
+    '',
+  ];
+  const summary = written.length ? await checkFiles(written, collection, heading, notes) : 'nothing new to check';
+  const outside = !vscode.workspace.getWorkspaceFolder(folder);
+  const pick = await vscode.window.showInformationMessage(`Calc Code: imported ${written.length} calc codes${kept ? `, kept ${kept} existing` : ''}. ${summary}.`, 'Show report', ...(outside ? ['Open folder'] : []));
+  if (pick === 'Show report') reportChannel?.show(true);
+  if (pick === 'Open folder') void vscode.commands.executeCommand('vscode.openFolder', folder, { forceNewWindow: false });
 }
 
